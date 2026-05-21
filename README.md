@@ -11,6 +11,15 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Pages
+
+| Route     | Description                                      |
+| --------- | ------------------------------------------------ |
+| `/`       | Chat — ChatGPT-style interface (UI ready)        |
+| `/upload` | Upload — drag & drop PDFs (UI ready)             |
+
+Built with [shadcn/ui](https://ui.shadcn.com) sidebar, scroll area, and form components.
+
 ## Scripts
 
 | Command        | Description              |
