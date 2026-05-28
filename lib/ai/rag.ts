@@ -23,8 +23,11 @@ export async function retrieveContext(query: string): Promise<string> {
     .map(([doc, score], i) => {
       const source = doc.metadata?.source ?? "unknown";
       const chunkIndex =
-        typeof doc.metadata?.chunkIndex === "number" ? ` chunk ${doc.metadata.chunkIndex}` : "";
-      return `[${i + 1}] (${source}${chunkIndex}, score=${score.toFixed(3)})\n${doc.pageContent}`;
+        typeof doc.metadata?.chunkIndex === "number"
+          ? `chunk-${doc.metadata.chunkIndex}`
+          : `chunk-${i + 1}`;
+      const ref = `${source}#${chunkIndex}`;
+      return `[${ref}] (relevance=${score.toFixed(3)})\n${doc.pageContent}`;
     })
     .join("\n\n");
 }

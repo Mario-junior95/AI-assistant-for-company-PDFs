@@ -9,7 +9,19 @@ import { retrieveContext } from "@/lib/ai/rag";
 import type { ChatMessage } from "./types";
 
 const BASE_SYSTEM_PROMPT =
-  "You are a helpful assistant for company PDF documents. Answer using only the provided context when available. If the context does not contain the answer, say so clearly. Be concise, accurate, and never guess. Every factual claim must include citation markers like [1] or [2] that map to the provided context sections.";
+  `You are a helpful assistant for company PDF documents.
+Answer using only the provided context.
+Do not use outside knowledge.
+If the context does not contain the answer, reply exactly:
+"I could not find that in the uploaded PDFs."
+
+Formatting requirements:
+- Start with a direct answer sentence.
+- If there are multiple items, use a numbered list.
+- Format list items as: **<Entity>** - <Detail> (<Date range when available>)
+- Keep output concise and well-structured.
+- Every factual claim must include citations using the human-readable refs from context, e.g. [resume.pdf#chunk-2].
+- End factual answers with: Sources: [resume.pdf#chunk-2], [policy.pdf#chunk-1].`;
 
 function toLangChainMessage(m: ChatMessage) {
   if (m.role === "system") return new SystemMessage(m.content);
@@ -17,28 +29,58 @@ function toLangChainMessage(m: ChatMessage) {
   return new HumanMessage(m.content);
 }
 
-async function buildSystemPrompt(messages: ChatMessage[]) {
+function extractContextRefs(context: string): string[] {
+  const refs = new Set<string>();
+  const lines = context.split("\n");
+  for (const line of lines) {
+    const match = line.match(/^\[([^\]]+)\]/);
+    if (match?.[1]) {
+      refs.add(match[1]);
+    }
+  }
+  return [...refs];
+}
+
+function normalizeCitationMarkers(text: string, refs: string[]): string {
+  return text.replace(/\[(\d+)\]/g, (full, rawIndex) => {
+    const idx = Number(rawIndex);
+    if (!Number.isInteger(idx) || idx < 1 || idx > refs.length) {
+      return full;
+    }
+    return `[${refs[idx - 1]}]`;
+  });
+}
+
+async function buildPromptContext(messages: ChatMessage[]) {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   if (!lastUser) {
-    return BASE_SYSTEM_PROMPT;
+    return {
+      hasContext: false,
+      context: "",
+    };
   }
 
   const context = await retrieveContext(lastUser.content);
-  if (!context) {
-    return `${BASE_SYSTEM_PROMPT}\n\nNo relevant document context is available yet. Ask the user to upload company PDFs on the Upload page or rephrase the question.`;
-  }
-
-  return `${BASE_SYSTEM_PROMPT}\n\nContext from uploaded company PDFs:\n\n${context}\n\nIf the answer is not fully supported by the context, respond: "I could not find that in the uploaded PDFs."`;
+  return {
+    hasContext: Boolean(context),
+    context,
+  };
 }
 
 export async function generateChatReply(messages: ChatMessage[]) {
+  const { hasContext, context } = await buildPromptContext(messages);
+  if (!hasContext) {
+    return "I could not find that in the uploaded PDFs.";
+  }
+  const refs = extractContextRefs(context);
+
   const model = new ChatOpenAI({
     model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
     temperature: 0.2,
     streaming: true,
   });
 
-  const systemPrompt = await buildSystemPrompt(messages);
+  const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\nContext from uploaded company PDFs:\n\n${context}`;
 
   const response = await model.invoke([
     new SystemMessage(systemPrompt),
@@ -50,5 +92,5 @@ export async function generateChatReply(messages: ChatMessage[]) {
       ? response.content
       : String(response.content);
 
-  return text;
+  return normalizeCitationMarkers(text, refs);
 }

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -116,7 +117,21 @@ export function ChatInterface() {
                     : "bg-muted text-foreground"
                 )}
               >
-                {message.content}
+                {message.role === "assistant" ? (
+                  <ReactMarkdown
+                    components={{
+                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                      ol: ({ children }) => <ol className="mb-2 list-decimal pl-5">{children}</ol>,
+                      ul: ({ children }) => <ul className="mb-2 list-disc pl-5">{children}</ul>,
+                      li: ({ children }) => <li className="mb-1">{children}</li>,
+                      strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                    }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+                ) : (
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                )}
               </div>
             </div>
           ))}
