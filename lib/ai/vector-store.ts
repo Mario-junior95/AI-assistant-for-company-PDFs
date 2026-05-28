@@ -11,7 +11,26 @@ async function collectionExists(collectionName: string, url: string, apiKey?: st
   return collections.some((c) => c.name === collectionName);
 }
 
-export async function addDocumentsToVectorStore(documents: Document[]) {
+async function deleteByFileHash(fileHash: string) {
+  const config = getQdrantConfig();
+  const client = new QdrantClient({ url: config.url, apiKey: config.apiKey });
+
+  await client.delete(config.collectionName, {
+    filter: {
+      must: [
+        {
+          key: "metadata.fileHash",
+          match: { value: fileHash },
+        },
+      ],
+    },
+  });
+}
+
+export async function upsertDocumentsInVectorStore(
+  documents: Document[],
+  fileHash: string
+) {
   if (documents.length === 0) {
     throw new Error("No document chunks to store");
   }
@@ -25,6 +44,7 @@ export async function addDocumentsToVectorStore(documents: Document[]) {
   );
 
   if (exists) {
+    await deleteByFileHash(fileHash);
     const store = await QdrantVectorStore.fromExistingCollection(
       embeddings,
       config

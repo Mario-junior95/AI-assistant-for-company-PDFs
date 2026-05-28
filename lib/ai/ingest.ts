@@ -1,8 +1,9 @@
 import { Document } from "@langchain/core/documents";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import { createHash } from "crypto";
 
 import { extractTextFromPdf } from "@/lib/ai/pdf";
-import { addDocumentsToVectorStore } from "@/lib/ai/vector-store";
+import { upsertDocumentsInVectorStore } from "@/lib/ai/vector-store";
 
 const PDF_MIME = "application/pdf";
 
@@ -15,6 +16,7 @@ export type IngestedDocument = {
   id: string;
   name: string;
   chunks: number;
+  fileHash: string;
 };
 
 function isPdf(file: File) {
@@ -30,13 +32,17 @@ export async function ingestPdfFile(file: File): Promise<IngestedDocument> {
 
   const documentId = crypto.randomUUID();
   const buffer = Buffer.from(await file.arrayBuffer());
+  const fileHash = createHash("sha256").update(buffer).digest("hex");
   const text = await extractTextFromPdf(buffer);
+  const uploadedAt = new Date().toISOString();
 
   const baseDoc = new Document({
     pageContent: text,
     metadata: {
       documentId,
       source: file.name,
+      fileHash,
+      uploadedAt,
     },
   });
 
@@ -46,16 +52,20 @@ export async function ingestPdfFile(file: File): Promise<IngestedDocument> {
       ...chunk.metadata,
       documentId,
       source: file.name,
+      fileHash,
+      uploadedAt,
       chunkIndex: index,
+      chunkId: `${documentId}:${index}`,
     };
     return chunk;
   });
 
-  await addDocumentsToVectorStore(chunksWithIndex);
+  await upsertDocumentsInVectorStore(chunksWithIndex, fileHash);
 
   return {
     id: documentId,
     name: file.name,
     chunks: chunksWithIndex.length,
+    fileHash,
   };
 }

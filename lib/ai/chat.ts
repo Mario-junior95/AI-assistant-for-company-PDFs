@@ -9,7 +9,7 @@ import { retrieveContext } from "@/lib/ai/rag";
 import type { ChatMessage } from "./types";
 
 const BASE_SYSTEM_PROMPT =
-  "You are a helpful assistant for company PDF documents. Answer using the provided context when available. If the context does not contain the answer, say so clearly. Be concise and accurate.";
+  "You are a helpful assistant for company PDF documents. Answer using only the provided context when available. If the context does not contain the answer, say so clearly. Be concise, accurate, and never guess. Every factual claim must include citation markers like [1] or [2] that map to the provided context sections.";
 
 function toLangChainMessage(m: ChatMessage) {
   if (m.role === "system") return new SystemMessage(m.content);
@@ -25,10 +25,10 @@ async function buildSystemPrompt(messages: ChatMessage[]) {
 
   const context = await retrieveContext(lastUser.content);
   if (!context) {
-    return `${BASE_SYSTEM_PROMPT}\n\nNo document context is available yet. Ask the user to upload company PDFs on the Upload page.`;
+    return `${BASE_SYSTEM_PROMPT}\n\nNo relevant document context is available yet. Ask the user to upload company PDFs on the Upload page or rephrase the question.`;
   }
 
-  return `${BASE_SYSTEM_PROMPT}\n\nContext from uploaded company PDFs:\n\n${context}`;
+  return `${BASE_SYSTEM_PROMPT}\n\nContext from uploaded company PDFs:\n\n${context}\n\nIf the answer is not fully supported by the context, respond: "I could not find that in the uploaded PDFs."`;
 }
 
 export async function generateChatReply(messages: ChatMessage[]) {
