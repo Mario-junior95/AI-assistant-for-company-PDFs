@@ -18,18 +18,31 @@ const WELCOME: Message = {
   id: "welcome",
   role: "assistant",
   content:
-    "Ask anything about your uploaded company PDFs. Answers will be grounded in your documents once the backend is connected.",
+    "Ask anything about your uploaded company PDFs. Upload documents on the Upload page first so answers can use your files.",
 };
+
+function toApiMessages(messages: Message[]) {
+  return messages
+    .filter((m) => m.id !== "welcome")
+    .map(({ role, content }) => ({ role, content }));
+}
 
 export function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  function handleSubmit(e: React.FormEvent) {
+  function scrollToBottom() {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+    });
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = input.trim();
-    if (!trimmed) return;
+    if (!trimmed || isLoading) return;
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -37,21 +50,50 @@ export function ChatInterface() {
       content: trimmed,
     };
 
-    setMessages((prev) => [
-      ...prev,
-      userMessage,
-      {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content:
-          "Chat API is not wired yet. Connect your RAG pipeline to get answers from your PDFs.",
-      },
-    ]);
-    setInput("");
+    const historyForApi = toApiMessages([...messages, userMessage]);
 
-    requestAnimationFrame(() => {
-      scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-    });
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setIsLoading(true);
+    scrollToBottom();
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: historyForApi }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          typeof data.error === "string" ? data.error : "Chat request failed"
+        );
+      }
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: data.message,
+        },
+      ]);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            err instanceof Error ? err.message : "Something went wrong.",
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+      scrollToBottom();
+    }
   }
 
   return (
@@ -78,6 +120,9 @@ export function ChatInterface() {
               </div>
             </div>
           ))}
+          {isLoading && (
+            <p className="text-sm text-muted-foreground">Thinking…</p>
+          )}
           <div ref={scrollRef} />
         </div>
       </ScrollArea>
@@ -98,13 +143,14 @@ export function ChatInterface() {
             }}
             placeholder="Message your documents..."
             rows={1}
+            disabled={isLoading}
             className="max-h-40 min-h-11 resize-none"
           />
           <Button
             type="submit"
             size="icon"
             className="size-11 shrink-0 rounded-full"
-            disabled={!input.trim()}
+            disabled={!input.trim() || isLoading}
             aria-label="Send message"
           >
             <ArrowUp />

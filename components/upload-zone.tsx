@@ -18,6 +18,11 @@ export function UploadZone() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [status, setStatus] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   const addFiles = useCallback((incoming: FileList | File[]) => {
     const pdfs = Array.from(incoming).filter(
@@ -30,6 +35,7 @@ export function UploadZone() {
       const unique = pdfs.filter((f) => !names.has(f.name));
       return [...prev, ...unique];
     });
+    setStatus(null);
   }, []);
 
   function removeFile(name: string) {
@@ -42,13 +48,57 @@ export function UploadZone() {
     addFiles(e.dataTransfer.files);
   }
 
+  async function handleUpload() {
+    if (files.length === 0) return;
+
+    setIsUploading(true);
+    setStatus(null);
+
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append("files", file);
+    }
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          typeof data.error === "string" ? data.error : "Upload failed"
+        );
+      }
+
+      const totalChunks = data.documents.reduce(
+        (sum: number, d: { chunks: number }) => sum + d.chunks,
+        0
+      );
+
+      setFiles([]);
+      setStatus({
+        type: "success",
+        message: `Indexed ${data.documents.length} PDF${data.documents.length === 1 ? "" : "s"} (${totalChunks} chunks stored in Qdrant).`,
+      });
+    } catch (err) {
+      setStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Upload failed",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Upload PDFs</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Drag and drop company PDFs here, or browse from your device. Only PDF
-          files are accepted.
+          PDFs are parsed, split into chunks, embedded with OpenAI, and stored in
+          Qdrant for retrieval when you chat.
         </p>
       </div>
 
@@ -98,6 +148,17 @@ export function UploadZone() {
         />
       </div>
 
+      {status && (
+        <p
+          className={cn(
+            "text-center text-sm",
+            status.type === "success" ? "text-foreground" : "text-destructive"
+          )}
+        >
+          {status.message}
+        </p>
+      )}
+
       {files.length > 0 && (
         <div className="space-y-3">
           <p className="text-sm font-medium">
@@ -120,6 +181,7 @@ export function UploadZone() {
                   type="button"
                   variant="ghost"
                   size="icon-sm"
+                  disabled={isUploading}
                   onClick={(e) => {
                     e.stopPropagation();
                     removeFile(file.name);
@@ -133,15 +195,13 @@ export function UploadZone() {
           </ul>
           <Button
             className="w-full"
-            disabled
-            title="Connect an upload API route to enable uploads"
+            disabled={isUploading}
+            onClick={handleUpload}
           >
-            Upload {files.length} PDF{files.length === 1 ? "" : "s"}
+            {isUploading
+              ? "Indexing…"
+              : `Upload & index ${files.length} PDF${files.length === 1 ? "" : "s"}`}
           </Button>
-          <p className="text-center text-xs text-muted-foreground">
-            Upload API not connected yet — files are kept in the browser for
-            now.
-          </p>
         </div>
       )}
     </div>
